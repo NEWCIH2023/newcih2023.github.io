@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>带交割日的K线图</title>
+</head>
+<body>
+<div style="width: 100vw;height: 100vh;" id="kChart"></div>
+</body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script type="text/javascript">
+  let markPointData = [];
+
+  let d1 = [
+    '2023-01-20',
+    '2023-02-17',
+    '2023-03-17',
+    '2023-04-21',
+    '2023-05-19',
+    '2023-06-16',
+    '2023-07-21',
+    '2023-08-18',
+    '2023-09-15',
+    '2023-10-20',
+    '2023-11-17',
+    '2023-12-15'];
+
+  let d2 = [
+    '2023-02-27',
+    '2023-03-30',
+    '2023-05-30',
+    '2023-06-29',
+    '2023-08-30',
+    '2023-09-27',
+    '2023-11-29',
+    '2023-12-28',
+  ];
+  let d3 = [
+    '2023-01-30',
+    '2023-02-22',
+    '2023-03-22',
+    '2023-04-26',
+    '2023-05-24',
+    '2023-06-28',
+    '2023-07-26',
+    '2023-08-23',
+    '2023-09-27',
+    '2023-10-25',
+    '2023-11-22',
+    '2023-12-27',
+  ];
+
+  let d4 = [
+    '2024-02-28',
+    '2024-03-28',
+    '2024-05-30',
+    '2024-06-27',
+    '2024-08-29',
+    '2024-09-27',
+    '2024-11-28',
+    '2024-12-30',
+  ];
+
+  let d5 = [
+    '2024-01-19',
+    '2024-02-23',
+    '2024-03-15',
+    '2024-04-19',
+    '2024-05-17',
+    '2024-06-14',
+    '2024-07-19',
+    '2024-08-16',
+    '2024-09-20',
+    '2024-10-18',
+    '2024-11-15',
+    '2024-12-20',
+  ];
+
+  let d6 = [
+    '2024-01-24',
+    '2024-02-28',
+    '2024-03-27',
+    '2024-04-24',
+    '2024-05-22',
+    '2024-06-26',
+    '2024-07-24',
+    '2024-08-28',
+    '2024-09-25',
+    '2024-10-23',
+    '2024-11-27',
+    '2024-12-25',
+  ];
+
+  let buyoutDate = [...d1, ...d2, ...d3, ...d4, ...d5, ...d6];
+
+  function formatDateTime(date, format) {
+    const o = {
+      'M+': date.getMonth() + 1, // 月份
+      'd+': date.getDate(), // 日
+      'h+': date.getHours() % 12 === 0 ? 12 : date.getHours() % 12, // 小时
+      'H+': date.getHours(), // 小时
+      'm+': date.getMinutes(), // 分
+      's+': date.getSeconds(), // 秒
+      'q+': Math.floor((date.getMonth() + 3) / 3), // 季度
+      S: date.getMilliseconds(), // 毫秒
+      a: date.getHours() < 12 ? '上午' : '下午', // 上午/下午
+      A: date.getHours() < 12 ? 'AM' : 'PM', // AM/PM
+    };
+    if (/(y+)/.test(format)) {
+      format = format.replace(RegExp.$1,
+          (date.getFullYear() + '').substr(4 - RegExp.$1.length));
+    }
+    for (let k in o) {
+      if (new RegExp('(' + k + ')').test(format)) {
+        format = format.replace(RegExp.$1, RegExp.$1.length === 1 ?
+            o[k] :
+            ('00' + o[k]).substr(('' + o[k]).length));
+      }
+    }
+    return format;
+  }
+
+  /**
+   * 补充未来一个月的空白数据，用于展示交割日点
+   *
+   * @param list
+   */
+  function makeUpFutureData(list) {
+    let lastDate = list[list.length - 1][0];
+    lastDate = new Date(lastDate);
+
+    for (let i = 0; i < 30; i++) {
+      lastDate.setDate(lastDate.getDate() + 1);
+      list.push([formatDateTime(lastDate, 'yyyy-MM-dd'), 3000, 3000, 3000, 3000]);
+    }
+  }
+
+  /**
+   * 查询实时K线图数据
+   *
+   * @param stockCode
+   * @returns {Promise<any>}
+   */
+  function queryKData(stockCode) {
+    return fetch(
+        `http://54.push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.${stockCode}&ut=fa5fd1943c7b386f172d6893dbfba10b&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&beg=20220101&end=20300101&smplmt=460&lmt=1000000`).
+        then(text => text.json()).
+        then(resp => {
+          let list = resp.data.klines;
+          let temp;
+
+          for (let i = 0; i < list.length; i++) {
+            let str = list[i];
+            let dataArray = str.split(',');
+
+            temp = dataArray[3];
+            dataArray[3] = dataArray[4];
+            dataArray[4] = temp;
+
+            dataArray[1] = parseFloat(dataArray[1]);
+            dataArray[2] = parseFloat(dataArray[2]);
+            dataArray[3] = parseFloat(dataArray[3]);
+            dataArray[4] = parseFloat(dataArray[4]);
+
+            list[i] = dataArray;
+          }
+
+          return list;
+        });
+  }
+
+  /**
+   * 创建交割日标记点数据
+   *
+   * @param list
+   */
+  function createMarkPointData(list) {
+    markPointData = [];
+
+    for (let i = 0; i < buyoutDate.length; i++) {
+      for (let j = 0; j < list.length; j++) {
+        if (list[j][0] === buyoutDate[i]) {
+          markPointData.push({
+            name: '交割日',
+            coord: [buyoutDate[i], list[j][1] + 100],
+            value: list[j][1],
+            itemStyle: {
+              color: 'black',
+            },
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * 创建K线图
+   *
+   * @param data
+   */
+  function createKChart(data) {
+
+    const upColor = '#ec0000';
+    const upBorderColor = '#8A0000';
+    const downColor = '#00da3c';
+    const downBorderColor = '#008F28';
+
+    const data0 = splitData(data);
+
+    function splitData(rawData) {
+      const categoryData = [];
+      const values = [];
+      for (var i = 0; i < rawData.length; i++) {
+        categoryData.push(rawData[i].splice(0, 1)[0]);
+        values.push(rawData[i]);
+      }
+      return {
+        categoryData: categoryData, values: values,
+      };
+    }
+
+    function calculateMA(dayCount) {
+      var result = [];
+      for (var i = 0, len = data0.values.length; i < len; i++) {
+        if (i < dayCount) {
+          result.push('-');
+          continue;
+        }
+        var sum = 0;
+        for (var j = 0; j < dayCount; j++) {
+          sum += +data0.values[i - j][1];
+        }
+        result.push(sum / dayCount);
+      }
+      return result;
+    }
+
+    option = {
+      title: {
+        text: '上证指数', left: 0,
+      }, tooltip: {
+        trigger: 'axis', axisPointer: {
+          type: 'cross',
+        },
+      }, legend: {
+        data: ['日K', 'MA5', 'MA10', 'MA20', 'MA30'],
+      }, grid: {
+        left: '10%', right: '10%', bottom: '15%',
+      }, xAxis: {
+        type: 'category',
+        data: data0.categoryData,
+        boundaryGap: false,
+        axisLine: {onZero: false},
+        splitLine: {show: false},
+        min: 'dataMin',
+        max: 'dataMax',
+      }, yAxis: {
+        scale: true, splitArea: {
+          show: true,
+        },
+      }, dataZoom: [
+        {
+          type: 'inside', start: 50, end: 100,
+        }, {
+          show: true, type: 'slider', top: '90%', start: 50, end: 100,
+        }], series: [
+        {
+          name: '日K', type: 'candlestick', data: data0.values, itemStyle: {
+            color: upColor,
+            color0: downColor,
+            borderColor: upBorderColor,
+            borderColor0: downBorderColor,
+          }, markPoint: {
+            symbol: 'rectange',
+            symbolSize: [1, 100],
+            label: {
+              formatter: function(param) {
+                return param != null ? Math.round(param.value) + '' : '';
+              },
+            },
+            data: markPointData, tooltip: {
+              formatter: function(param) {
+                return param.name + '<br>' + (param.data.coord || '');
+              },
+            },
+          },
+        }, {
+          name: 'MA5',
+          type: 'line',
+          data: calculateMA(5),
+          smooth: true,
+          lineStyle: {
+            opacity: 0.5,
+          },
+        }, {
+          name: 'MA10',
+          type: 'line',
+          data: calculateMA(10),
+          smooth: true,
+          lineStyle: {
+            opacity: 0.5,
+          },
+        }],
+    };
+
+    let instance = echarts.init(document.getElementById('kChart'));
+    instance.setOption(option);
+  }
+
+  /**
+   * 主程序运行
+   */
+  queryKData('000001').
+      then(resp => {
+        makeUpFutureData(resp);
+        createMarkPointData(resp);
+        createKChart(resp);
+      });
+</script>
+</html>
